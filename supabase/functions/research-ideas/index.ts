@@ -1,0 +1,15 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+const cors={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type"};
+Deno.serve(async(req)=>{
+  if(req.method==='OPTIONS') return new Response('ok',{headers:cors});
+  try{
+    const apiKey=Deno.env.get('OPENAI_API_KEY'); if(!apiKey) throw new Error('OPENAI_API_KEY is not configured');
+    const brief=await req.json();
+    const system=`You are PeopleLab, a workplace People Ops research assistant. Research current, reputable web sources when useful and produce practical workplace ideas tailored to the supplied team size, work format, budget, currency, time and free-text goal. For wellbeing/mental-health requests, stay at organizational wellbeing level: healthy work design, access to support, recovery, social connection, manager practices, workload, psychologically safer participation. Do not diagnose or provide treatment. Return 6-10 genuinely distinct ideas. Budget estimates must be approximate and transparent. Each idea needs title, summary, why_fit, expected_outcome, estimated_budget, time_needed, materials, preparation, steps, accessibility, success_metric, and sources. Sources must be reputable URLs actually used by web search. Return JSON only.`;
+    const body={model:'gpt-5-mini',tools:[{type:'web_search'}],input:[{role:'system',content:system},{role:'user',content:JSON.stringify(brief)}],text:{format:{type:'json_schema',name:'peoplelab_ideas',strict:true,schema:{type:'object',properties:{ideas:{type:'array',minItems:6,maxItems:10,items:{type:'object',properties:{title:{type:'string'},summary:{type:'string'},why_fit:{type:'string'},expected_outcome:{type:'string'},estimated_budget:{type:'string'},time_needed:{type:'string'},materials:{type:'array',items:{type:'string'}},preparation:{type:'array',items:{type:'string'}},steps:{type:'array',items:{type:'string'}},accessibility:{type:'string'},success_metric:{type:'string'},sources:{type:'array',items:{type:'object',properties:{title:{type:'string'},url:{type:'string'}},required:['title','url'],additionalProperties:false}}},required:['title','summary','why_fit','expected_outcome','estimated_budget','time_needed','materials','preparation','steps','accessibility','success_metric','sources'],additionalProperties:false}}},required:['ideas'],additionalProperties:false}}}};
+    const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{'Authorization':`Bearer ${apiKey}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const data=await r.json(); if(!r.ok) return new Response(JSON.stringify({error:data}),{status:r.status,headers:{...cors,'Content-Type':'application/json'}});
+    const text=data.output_text ?? data.output?.flatMap((x:any)=>x.content||[]).find((x:any)=>x.type==='output_text')?.text;
+    return new Response(text||JSON.stringify({ideas:[]}),{headers:{...cors,'Content-Type':'application/json'}});
+  }catch(e){return new Response(JSON.stringify({error:String(e)}),{status:500,headers:{...cors,'Content-Type':'application/json'}})}
+});
